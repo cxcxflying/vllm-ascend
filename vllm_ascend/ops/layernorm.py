@@ -18,7 +18,7 @@
 from typing import Optional, Tuple, Union
 
 import torch
-from vllm.model_executor.layers.layernorm import RMSNorm
+from vllm.model_executor.layers.layernorm import RMSNorm, GemmaRMSNorm
 
 from vllm_ascend.utils import is_310p
 
@@ -83,4 +83,19 @@ def forward_oot(
     return x
 
 
+def ascend_gemma_forward_oot(
+    self,
+    x: torch.Tensor,
+    residual: Optional[torch.Tensor] = None,
+) -> Union[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
+    """PyTorch-native implementation equivalent to forward()."""
+    weight_gemma = 1.0 + self.weight.data
+    if residual is not None:
+        x, _, residual = torch_npu.npu_add_rms_norm(x, residual, weight_gemma, self.variance_epsilon)
+        return x, residual
+
+    x, _ = torch_npu.npu_rms_norm(x, weight_gemma, self.variance_epsilon)
+    return x
+
 RMSNorm.forward_oot = forward_oot
+GemmaRMSNorm.forward_oot = ascend_gemma_forward_oot
